@@ -37,7 +37,7 @@ with webdriver.Chrome(options=options) as driver:
     driver.get("https://job.incruit.com/entry/")
 
     # Setup wait for later
-    wait = WebDriverWait(driver, 10)
+    wait = WebDriverWait(driver, 4)
 
     regions = driver.find_elements(By.XPATH, "//*[@id=\"dropFirstDown1\"]/div[2]/ul/li")
 
@@ -52,12 +52,16 @@ with webdriver.Chrome(options=options) as driver:
     ######## 본격적인 크롤링 ########
 
     rgnIDs = [*rgnID_NAME]
+    rgnIDs_count = len(rgnIDs)
     features = ['region', 'cpname', 'title', 'career', 'education', 
                 'jobtype', 'cptype', 'sales', 'aversalary', 'employees', 
                 'capital', 'pros']
     df = pd.DataFrame(columns=features)
-
+    iter = 1
     for rgnID in rgnIDs:
+        print("{}".format(rgnID_NAME[rgnID]))
+        print("{} / {}".format(iter, rgnIDs_count))
+        iter+=1
         driver.get("https://job.incruit.com/entry/?rgn2={0}".format(rgnID))
 
         # 지역명
@@ -67,7 +71,7 @@ with webdriver.Chrome(options=options) as driver:
         # 60 lines per page
         lines = driver.find_elements(By.XPATH, "//*[@id=\"incruit_contents\"]/div/div/div[4]/div[1]/div[2]/ul")
 
-        linesPerPage = 5
+        linesPerPage = 3
         for i in range(linesPerPage):
             #### 고용 정보 ####
             # company name cpname
@@ -104,8 +108,7 @@ with webdriver.Chrome(options=options) as driver:
                     driver.switch_to.window(window_handle)
                     break
 
-            # crawling
-            # //*[@id="company_warp"]/div[1]/div/div/div/div/div/div
+            # 기업명, 기업유형, 대표, 설립일, 매출, 사원수, 평균연봉, 자본금, 업종
             try:
                 detail = wait.until(EC.presence_of_element_located((By.XPATH, "//*[@id=\"company_warp\"]/div[1]/div/div/div/div/div/div")))
             except (NoSuchElementException, TimeoutException):
@@ -117,105 +120,77 @@ with webdriver.Chrome(options=options) as driver:
                 elems = row.find_elements(By.CSS_SELECTOR, "li > span")
                 for elem in elems:
                     # 0기업명, 1기업유형, 2대표, 3설립일, 4매출, 5사원수, 6평균연봉, 7자본금, 8업종
-                    # 1, 4, 5, 6, 7
+                    # 1, 4, 5, 6, 7 만 선택
                     if elem_idx==1: cptype = elem.text
                     elif elem_idx==4: sales = elem.text
                     elif elem_idx==5: employees = elem.text
                     elif elem_idx==6: aversalary = elem.text
                     elif elem_idx==7: capital = elem.text
                     elem_idx += 1
-            
-            pros2 = driver.find_elements(By.XPATH, "//*[@id=\"company_warp\"]/div[4]/div/div[1]/div/div/div/div/ul/li")
-            for pro in pros2:
-                pros.append(pro.find_element(By.CSS_SELECTOR, "li > a > strong").text)
 
-            
+            # 입사 지원하면 좋은 이유 (pros.append)
+                    
+            try:
+                # '더보기' 항목이 있으면 클릭 (목록이 많을 경우 잘림. '더보기' 버튼을 눌러 전체 목록 보기)
+                driver.find_element(By.XPATH, "//*[@id=\"btnCategoryMore\"]").click()
+                # 가끔 클릭이 적용되기 전에 데이터를 긁어와서 누락되는 경우 존재
+                time.sleep(1)
+            except NoSuchElementException:
+                # print("더보기 없음")
+                pass
+
+            # try:
+            #     newty = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#company_warp > div:nth-child(4) > div > div.newty")))
+            # except TimeoutException:
+            #     print("헿")
+            #     try:
+            #         newty = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#company_warp > div:nth-child(3) > div > div.newty")))
+            #     # div.newty (입사지원하면 좋은 이유) 가 아에 없는 경우
+            #     except TimeoutException:
+            #         print("헿2")
+            #         pass
+            try:
+                newty = driver.find_element(By.CSS_SELECTOR, "#company_warp > div:nth-child(4) > div > div.newty")
+            except NoSuchElementException:
+                # print("헿")
+                try:
+                    newty = driver.find_element(By.CSS_SELECTOR, "#company_warp > div:nth-child(3) > div > div.newty")
+                # div.newty (입사지원하면 좋은 이유) 가 아에 없는 경우
+                except NoSuchElementException:
+                    print("헿2")
+                    pass
+            finally:
+                try:
+                    pros2 = newty.find_elements(By.CSS_SELECTOR, "div > div > div > div > ul > li")
+                    for pro in pros2:
+                        pros.append(pro.find_element(By.CSS_SELECTOR, "li > a > strong").text)
+                except NoSuchElementException:
+                    # div.newty (입사지원하면 좋은 이유) 가 아에 없는 경우
+                    # List<string> pro : empty list 로 냅둠.
+                    pass
+                    
             # features = ['region', 'cpname', 'title', 'career', 'education', 
             #             'jobtype', 'cptype', 'sales', 'employees' 'aversalary', 
             #             'capital', 'pros']
                 
+            pros_str = '-'.join([pro for pro in pros])
+
+            # 데이터 취합
+
             values = [rgnName, cpname, title, career, education, 
                       jobType, cptype, sales, employees, aversalary,
-                      capital, pros]
+                      capital, pros_str]
+            
             new_row = dict(zip(features, values))
 
             # print(new_row)
 
-            df = pd.concat([df, pd.DataFrame(new_row)], ignore_index=True)
+            # ValueError: If using all scalar values, you must pass an index 때문에 [new_row] 형태로 dictionary 를 list 로 감싸기
+            df = pd.concat([df, pd.DataFrame.from_dict([new_row])], ignore_index=True)
 
             # close current tap
             driver.close()
             # switch back to original window(or tap)
             driver.switch_to.window(original_window)
     
-    df.to_csv('data.csv', encoding='utf-8-sig')
-        
-    # # 울산
-    # driver.get("https://job.incruit.com/entry/?rgn2=17")
-
-    # # 60 lines per page
-    # lines = driver.find_elements(By.XPATH, "//*[@id=\"incruit_contents\"]/div/div/div[4]/div[1]/div[2]/ul")
-
-    # #### 고용 정보 ####
-
-    # # company name cpname
-    # cpname = lines[0].find_element(By.XPATH, "//*[@id=\"incruit_contents\"]/div/div/div[4]/div[1]/div[2]/ul[1]/li/div[1]/div[1]/a").text
-    # # title
-    # title = lines[0].find_element(By.XPATH, "//*[@id=\"incruit_contents\"]/div/div/div[4]/div[1]/div[2]/ul[1]/li/div[2]/div[1]/a").text
-    # # 경력
-    # career = lines[0].find_element(By.XPATH, "//*[@id=\"incruit_contents\"]/div/div/div[4]/div[1]/div[2]/ul[1]/li/div[2]/div[2]/span[1]").text
-    # # 학력
-    # education = lines[0].find_element(By.XPATH, "//*[@id=\"incruit_contents\"]/div/div/div[4]/div[1]/div[2]/ul[1]/li/div[2]/div[2]/span[2]").text
-    # # 고용형태
-    # jobType = lines[0].find_element(By.XPATH, "//*[@id=\"incruit_contents\"]/div/div/div[4]/div[1]/div[2]/ul[1]/li/div[2]/div[2]/span[4]").text
-    # # 기타 특이사항 - 장점
-    # pros = []
-    # pros1 = lines[0].find_elements(By.XPATH, "//*[@id=\"incruit_contents\"]/div/div/div[4]/div[1]/div[2]/ul[1]/li/div[1]/div[2]/a")
-    # for pro in pros1:
-    #     pros.append(pro.text)
-
-    # # print(cpname, title, career, education, jobType)
-
-    # #### 기업 정보 ####
-
-    # # Store the ID of the original windows
-    # original_window = driver.current_window_handle
-    # # Check we don't have other windows open already
-    # assert len(driver.window_handles) == 1
-    # # Click the link of company info
-    # lines[0].find_element(By.XPATH, "//*[@id=\"incruit_contents\"]/div/div/div[4]/div[1]/div[2]/ul[1]/li/div[1]/div[1]/a").click()
-    # # Wait for the new tab
-    # wait.until(EC.number_of_windows_to_be(2))
-    # # Find a new windows and switch to
-    # for window_handle in driver.window_handles:
-    #     if window_handle != original_window:
-    #         driver.switch_to.window(window_handle)
-    #         break
-
-    # # crawling
-    # try:
-    #     detail = wait.until(EC.presence_of_element_located((By.XPATH, "//*[@id=\"company_warp\"]/div[1]/div/div/div/div/div/div")))
-    # except:
-    #     detail = wait.until(EC.presence_of_element_located((By.XPATH, "//*[@id=\"company_warp\"]/div[1]/div/div/div[3]/div/div/div")))
-    # finally:
-    #     rows = detail.find_elements(By.CSS_SELECTOR, "ul")
-    #     for row in rows:
-    #         elems = row.find_elements(By.CSS_SELECTOR, "li > span")
-    #         for elem in elems:
-    #             # 0기업명, 1기업유형, 2대표, 3설립일, 4매출, 5사원수, 6평균연봉, 7자본금, 8업종
-    #             # 1, 4, 5, 6, 7
-    #             print(elem.text)
-    
-    # pros2 = driver.find_elements(By.XPATH, "//*[@id=\"company_warp\"]/div[4]/div/div[1]/div/div/div/div/ul/li")
-    # for pro in pros2:
-    #     pros.append(pro.find_element(By.CSS_SELECTOR, "li > a > strong").text)
-
-    
-    # row = {"cpname" : [cpname], "title" : [title]}
-    # df = pd.DataFrame(row)
-    # df.to_csv("data.csv", encoding="utf-8-sig")
-
-    # print(df)
-    
-    # close current tap
-    # driver.close()
+    df.to_csv('raw_data.csv', encoding='utf-8-sig')
