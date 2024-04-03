@@ -291,7 +291,7 @@ with webdriver.Chrome(options=options) as driver:
 
             # print(new_row)
 
-            # ValueError: If using all scalar values, you must pass an index 때문에 [new_row] 형태로 dictionary 를 list 로 감싸기
+            # 기존 dataframe 의 새 row 로 추가
             df = pd.concat([df, pd.DataFrame.from_dict([new_row])], ignore_index=True)
 
             # close current tap
