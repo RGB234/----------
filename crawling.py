@@ -36,7 +36,7 @@ with webdriver.Chrome(options=options) as driver:
     driver.get("https://job.incruit.com/entry/")
 
     # Setup wait for later
-    wait = WebDriverWait(driver, 4)
+    wait = WebDriverWait(driver, 5)
 
     regions = driver.find_elements(By.XPATH, '//*[@id="dropFirstDown1"]/div[2]/ul/li')
 
@@ -86,7 +86,7 @@ with webdriver.Chrome(options=options) as driver:
             By.XPATH, '//*[@id="incruit_contents"]/div/div/div[4]/div[1]/div[2]/ul'
         )
 
-        linesPerPage = 5
+        linesPerPage = 10
         for i in range(linesPerPage):
             #### 고용 정보 ####
             # company name cpname
@@ -126,22 +126,21 @@ with webdriver.Chrome(options=options) as driver:
                 .text
             )
             # 기타 특이사항 - 장점
+            # 기업 정보 (상세보기) 의 입사추천태그('입사지원하면 좋은 이유')와 중복우려 -> 해당코드 주석처리
             pros = []
-            pros1 = lines[i].find_elements(
-                By.CSS_SELECTOR, "li > div.cell_first > div.cl_btm > a"
-            )
-            for pro in pros1:
-                pros.append(pro.text)
+            # pros1 = lines[i].find_elements(
+            #     By.CSS_SELECTOR, "li > div.cell_first > div.cl_btm > a"
+            # )
+            # for pro in pros1:
+            #     pros.append(pro.text)
 
-            #### 기업 정보 ####
+            ############ 기업 정보 ############
 
             # Store the ID of the original windows
             original_window = driver.current_window_handle
             # Check we don't have other windows open already
             assert len(driver.window_handles) == 1
             # Click the link of company info
-            # newTap = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "li > div.cell_mid > div.cl_top > a")))
-            # driver.execute_script("arguments[0].click", newTap)
             lines[i].find_element(
                 By.CSS_SELECTOR, "li > div.cell_first > div.cl_top > a"
             ).click()
@@ -200,67 +199,57 @@ with webdriver.Chrome(options=options) as driver:
             if aversalaryIsNull:
                 aversalary = "-"
 
-            # 입사 지원하면 좋은 이유 (pros.append)
-            try:
-                # '더보기' 항목이 있으면 클릭 (목록이 많을 경우 잘림. '더보기' 버튼을 눌러 전체 목록 보기)
-                driver.find_element(By.XPATH, '//*[@id="btnCategoryMore"]').click()
-                # 가끔 클릭이 적용되기 전에 데이터를 긁어와서 누락되는 경우 존재
-                time.sleep(1)
-            except NoSuchElementException:
-                # print("더보기 없음")
-                pass
-
+            # 입사 지원하면 좋은 이유
             # try:
-            #     newty = wait.until(
+            #     # '더보기' 항목이 있으면 클릭 (목록이 많을 경우 잘림. '더보기' 버튼을 눌러 전체 목록 보기)
+            #     wait.until(
             #         EC.presence_of_element_located(
-            #             (
-            #                 By.CSS_SELECTOR,
-            #                 "#company_warp > div:nth-child(4) > div > div.newty",
-            #             )
+            #             (By.XPATH, '//*[@id="btnCategoryMore"]')
             #         )
             #     )
+            #     driver.find_element(By.XPATH, '//*[@id="btnCategoryMore"]').click()
             # except TimeoutException:
-            #     print("헿")
-            #     try:
-            #         newty = wait.until(
-            #             EC.presence_of_element_located(
-            #                 (
-            #                     By.CSS_SELECTOR,
-            #                     "#company_warp > div:nth-child(3) > div > div.newty",
-            #                 )
-            #             )
-            #         )
-            #     # div.newty (입사지원하면 좋은 이유) 가 아에 없는 경우
-            #     except TimeoutException:
-            #         print("헿2")
-            #         pass
+            #     print("더보기 없음")
+            #     pass
+
             try:
                 newty = driver.find_element(
                     By.CSS_SELECTOR,
                     "#company_warp > div:nth-child(4) > div > div.newty",
                 )
+            # '입사 지원하면 좋은 이유' element 위치(XPATH)가 조금씩 다른 문제를 예외처리를 통해 일일이 조정
             except NoSuchElementException:
-                # print("헿")
+                # print("NoSuchElementException: #company_warp > div:nth-child(4) > div > div.newty")
                 try:
                     newty = driver.find_element(
                         By.CSS_SELECTOR,
                         "#company_warp > div:nth-child(3) > div > div.newty",
                     )
-                # div.newty (입사지원하면 좋은 이유) 가 아에 없는 경우
+                # div.newty, '입사지원하면 좋은 이유' 항목이 아예 등록되지 않은 경우
                 except NoSuchElementException:
-                    print("헿2")
+                    # print("NoSuchElementException: #company_warp.")
                     pass
             finally:
                 try:
                     pros2 = newty.find_elements(
                         By.CSS_SELECTOR, "div > div > div > div > ul > li"
                     )
+
                     for pro in pros2:
+                        # print(
+                        #     driver.execute_script(
+                        #         "return arguments[0].innerText",
+                        #         pro.find_element(By.CSS_SELECTOR, "a > strong"),
+                        #     )
+                        # )
                         pros.append(
-                            pro.find_element(By.CSS_SELECTOR, "li > a > strong").text
+                            driver.execute_script(
+                                "return arguments[0].innerText",
+                                pro.find_element(By.CSS_SELECTOR, "a > strong"),
+                            )
                         )
                 except NoSuchElementException:
-                    # div.newty (입사지원하면 좋은 이유) 가 아에 없는 경우
+                    # newty IS NULL. 즉, div.newty (입사지원하면 좋은 이유) 가 아에 없는 경우
                     # List<string> pros : empty list 로 냅둠.
                     pass
 
