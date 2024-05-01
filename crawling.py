@@ -35,6 +35,13 @@ options.add_argument("--log-level=3")
 # To enable .click() in headless mode
 options.add_argument("--window-size=1024,800")
 
+# 지역당 몇 개의 페이지를 크롤링할지
+PAGES = 5
+# 한 페이지당 몇 개의 모집공고를 크롤링할지
+LINES = 50
+# 크롤링을 시작할 지역 (1~17)
+STARTINGPOINT = 1
+
 with webdriver.Chrome(options=options) as driver:
 
     # 17 개 지역
@@ -49,10 +56,10 @@ with webdriver.Chrome(options=options) as driver:
     driver.get("https://job.incruit.com/entry/")
 
     # Setup wait for later
-    wait = WebDriverWait(driver, 30)
-
+    wait = WebDriverWait(driver, 6)
     regions = driver.find_elements(By.XPATH, '//*[@id="dropFirstDown1"]/div[2]/ul/li')
 
+    # {region ID : Name}
     rgnID_NAME = {}
 
     for region in regions:
@@ -67,8 +74,8 @@ with webdriver.Chrome(options=options) as driver:
 
     ######## 본격적인 크롤링 ########
 
+    # the keys of rgnID_NAME dictionary
     rgnIDs = [*rgnID_NAME]
-    rgnIDs_count = len(rgnIDs)
     features = [
         "region",
         "cpname",
@@ -85,13 +92,32 @@ with webdriver.Chrome(options=options) as driver:
     ]
     df = pd.DataFrame(columns=features)
 
+    print(rgnID_NAME)
+
     iter = 1
-    for rgnID in rgnIDs:
+    for order in range(len(rgnIDs)):
+        # 에러로 인해 크롤링이 중간에 중단되었을 경우,
+        # crawling_startingpoint 를 조정하여 수동으로 특정 지역부터 크롤링을 시작할 수 있다.
+        # 17개 지역
+        # {'11': '서울', '12': '부산', '14': '인천', '16': '대전', '15': '광주',
+        # '13': '대구', '17': '울산', '27': '세종', '18': '경기', '19': '강원특별자치도',
+        # '20': '충북', '21': '충남', '22': '전북특별자치도', '23': '전남', '24': '경북',
+        # '25': '경남', '26': '제주'}
+
+        # ex) '대구' 지역에서 중단되었을 경우, 위 딕셔너리에서 '대구' 는 6번째. '대구' 의 rgnID 는 rgnIDs[5]
+        # 따라서 crawling_startingpoint 를 6으로 하면 서울~광주까지는 크롤링하지 않고 패스.
+        crawling_startingpoint = STARTINGPOINT
+        if order < crawling_startingpoint - 1:
+            iter = crawling_startingpoint
+            continue
+
+        rgnID = rgnIDs[order]
+
         # progress rate
-        print("{0} ({1} / {2})".format(rgnID_NAME[rgnID], iter, rgnIDs_count))
+        print("{0} ({1} / {2})".format(rgnID_NAME[rgnID], iter, len(rgnIDs)))
         iter += 1
 
-        pages = 4
+        pages = PAGES
         # 1..pages
         for page in range(1, pages + 1):
 
@@ -107,7 +133,7 @@ with webdriver.Chrome(options=options) as driver:
                 By.XPATH, '//*[@id="incruit_contents"]/div/div/div[4]/div[1]/div[2]/ul'
             )
 
-            linesPerPage = 60
+            linesPerPage = LINES
             for i in range(linesPerPage):
                 # progress rate
                 if (i + 1) % 10 == 0:
@@ -116,7 +142,7 @@ with webdriver.Chrome(options=options) as driver:
                     )
 
                 #### 고용 정보 ####
-                # company name cpname
+                # company name
                 cpname = (
                     lines[i]
                     .find_element(
@@ -157,23 +183,33 @@ with webdriver.Chrome(options=options) as driver:
                     )
                     .text
                 )
-                # 입사추천태그('입사지원하면 좋은 이유')
-                pros = []
 
                 ############ 기업 정보 ############
 
                 # Store the ID of the original windows
                 original_window = driver.current_window_handle
 
+                # Check we don't have other windows open already
+                assert len(driver.window_handles) == 1
+
                 # Click the link of company info
-                wait.until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, "li > div.cell_first > div.cl_top > a")
+                cpInfoLink = wait.until(
+                    EC.element_to_be_clickable(
+                        lines[i].find_element(
+                            By.CSS_SELECTOR, "li > div.cell_first > div.cl_top > a"
+                        )
                     )
-                ).click()
+                )
+
+                cpInfoLink.click()
 
                 # Wait for the new tab
-                wait.until(EC.number_of_windows_to_be(2))
+                try:
+                    wait.until(EC.number_of_windows_to_be(2))
+                except TimeoutException:
+                    # 중간결과라도 저장
+                    df.to_csv("raw_data_temp.csv", encoding="utf-8-sig")
+
                 # Find a new windows and switch to
                 for window_handle in driver.window_handles:
                     if window_handle != original_window:
@@ -181,28 +217,32 @@ with webdriver.Chrome(options=options) as driver:
                         break
 
                 # 기업명, 기업유형, 대표, 설립일, 매출, 사원수, 평균연봉, 자본금, 업종
+                # detail = driver.find_element(
+                #     By.CSS_SELECTOR,
+                #     ".head_company_detail > div",
+                # )
                 try:
                     detail = wait.until(
                         EC.presence_of_element_located(
                             (
-                                By.XPATH,
-                                '//*[@id="company_warp"]/div[1]/div/div/div/div/div/div',
+                                By.CSS_SELECTOR,
+                                ".head_company_detail > div",
                             )
                         )
                     )
-                except (NoSuchElementException, TimeoutException):
-                    detail = wait.until(
-                        EC.presence_of_element_located(
-                            (
-                                By.XPATH,
-                                '//*[@id="company_warp"]/div[1]/div/div/div[3]/div/div/div',
-                            )
-                        )
-                    )
+                except TimeoutException:
+                    # 중간결과라도 저장
+                    df.to_csv("raw_data_temp.csv", encoding="utf-8-sig")
 
                 # 0 기업명, 1 기업규모, 2 대표자, 3 설립일, 4 매출액, 5 사원수, 6 평균연봉, 7 자본금, 8 업종
+                # cptype = "-"
+                sales = "-"
+                # employees = "-"
+                aversalary = "-"
+                capital = "-"
+
                 rows = detail.find_elements(By.CSS_SELECTOR, "ul")
-                aversalaryIsNull = True
+                # aversalaryIsNull = True
                 for row in rows:
                     elems = row.find_elements(By.CSS_SELECTOR, "li")
                     for elem in elems:
@@ -210,7 +250,7 @@ with webdriver.Chrome(options=options) as driver:
                         elem_text = elem.find_element(By.CSS_SELECTOR, "strong").text
 
                         if elem_text == "기업규모":
-                            cptype = elem.find_element(By.CSS_SELECTOR, "span > a").text
+                            cptype = elem.find_element(By.CSS_SELECTOR, "span").text
                         elif elem_text == "매출액":
                             # '-' 값으로 채워진 경우 존재
                             sales = elem.find_element(By.CSS_SELECTOR, "span").text
@@ -219,20 +259,22 @@ with webdriver.Chrome(options=options) as driver:
                         elif elem_text == "평균연봉":
                             # ** 아예 항목이 없는 경우 존재 **
                             aversalary = elem.find_element(By.CSS_SELECTOR, "span").text
-                            aversalaryIsNull = False
+                            # aversalaryIsNull = False
                         elif elem_text == "자본금":
                             # '-' 값으로 채워진 경우 존재
                             capital = elem.find_element(By.CSS_SELECTOR, "span").text
 
-                if aversalaryIsNull:
-                    aversalary = "-"
+                # if aversalaryIsNull:
+                #     aversalary = "-"
 
+                # 입사추천태그('입사지원하면 좋은 이유')
+                pros = []
                 try:
                     newty = driver.find_element(
                         By.CSS_SELECTOR,
                         "#company_warp > div:nth-child(4) > div > div.newty",
                     )
-                # '입사 지원하면 좋은 이유' element 위치(XPATH)가 조금씩 다른 문제를 예외처리를 통해 일일이 조정
+                # '입사 지원하면 좋은 이유' element XPATH가 조금씩 다른 문제를 예외처리를 통해 일일이 조정
                 except NoSuchElementException:
                     # print("NoSuchElementException: #company_warp > div:nth-child(4) > div > div.newty")
                     try:
@@ -240,7 +282,7 @@ with webdriver.Chrome(options=options) as driver:
                             By.CSS_SELECTOR,
                             "#company_warp > div:nth-child(3) > div > div.newty",
                         )
-                    # div.newty, '입사지원하면 좋은 이유' 항목이 아예 등록되지 않은 경우
+                    # div.newty 이 아예 없는 경우 ('입사지원하면 좋은 이유' 항목 미등록)
                     except NoSuchElementException:
                         # print("NoSuchElementException: #company_warp.")
                         pass
@@ -251,12 +293,6 @@ with webdriver.Chrome(options=options) as driver:
                         )
 
                         for pro in pros2:
-                            # print(
-                            #     driver.execute_script(
-                            #         "return arguments[0].innerText",
-                            #         pro.find_element(By.CSS_SELECTOR, "a > strong"),
-                            #     )
-                            # )
                             pros.append(
                                 driver.execute_script(
                                     "return arguments[0].innerText",
