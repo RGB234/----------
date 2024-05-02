@@ -32,21 +32,25 @@ options.add_argument(
 
 # debug console log
 options.add_argument("--log-level=3")
+
+options.add_argument("--ignore-certificate-errors-spki-list")
+options.add_argument("--ignore-certificate-errors")
+options.add_argument("--ignore-ssl-errors")
 # To enable .click() in headless mode
 options.add_argument("--window-size=1024,800")
 
 # 지역당 몇 개의 페이지를 크롤링할지
-PAGES = 5
+PAGES = 3
 # 한 페이지당 몇 개의 모집공고를 크롤링할지
-LINES = 50
+LINES = 60
 # 크롤링을 시작할 지역 (1~17)
-STARTINGPOINT = 1
+STARTINGPOINT = 5
 
 with webdriver.Chrome(options=options) as driver:
 
     # 17 개 지역
-    # [서울, 부산, 인천, 대전, 광주, 대구, 울산, 세종, 경기,
-    # 강원, 충북, 충남, 전북, 전남, 경북, 경남, 제주]
+    # [서울, 부산, 인천, 대전, 광주, 대구, 울산, 세종, 경기, 강원,
+    # 충북, 충남, 전북, 전남, 경북, 경남, 제주]
 
     # 수도권 : 서울, 인천, 세종, 경기
     # 수도권 외 광역시: 부산, 대구, 광주, 대전, 울산
@@ -56,7 +60,7 @@ with webdriver.Chrome(options=options) as driver:
     driver.get("https://job.incruit.com/entry/")
 
     # Setup wait for later
-    wait = WebDriverWait(driver, 6)
+    wait = WebDriverWait(driver, 30)
     regions = driver.find_elements(By.XPATH, '//*[@id="dropFirstDown1"]/div[2]/ul/li')
 
     # {region ID : Name}
@@ -90,12 +94,14 @@ with webdriver.Chrome(options=options) as driver:
         "capital",
         "pros",
     ]
-    df = pd.DataFrame(columns=features)
+    # df = pd.DataFrame(columns=features)
 
     print(rgnID_NAME)
 
+    # [지역별로 반복]
     iter = 1
     for order in range(len(rgnIDs)):
+        df = pd.DataFrame(columns=features)
         # 에러로 인해 크롤링이 중간에 중단되었을 경우,
         # crawling_startingpoint 를 조정하여 수동으로 특정 지역부터 크롤링을 시작할 수 있다.
         # 17개 지역
@@ -117,10 +123,10 @@ with webdriver.Chrome(options=options) as driver:
         print("{0} ({1} / {2})".format(rgnID_NAME[rgnID], iter, len(rgnIDs)))
         iter += 1
 
+        # [페이지마다 반복]
         pages = PAGES
         # 1..pages
         for page in range(1, pages + 1):
-
             driver.get(
                 "https://job.incruit.com/entry/?rgn2={0}&page={1}".format(rgnID, page)
             )
@@ -130,98 +136,97 @@ with webdriver.Chrome(options=options) as driver:
 
             # 60 lines per page
             lines = driver.find_elements(
-                By.XPATH, '//*[@id="incruit_contents"]/div/div/div[4]/div[1]/div[2]/ul'
+                By.XPATH,
+                '//*[@id="incruit_contents"]/div/div/div[4]/div[1]/div[2]/ul',
             )
 
             linesPerPage = LINES
             for i in range(linesPerPage):
-                # progress rate
-                if (i + 1) % 10 == 0:
-                    print(
-                        f" {(i+1) + linesPerPage * (page - 1)} / {linesPerPage * pages}"
-                    )
+                try:
+                    # progress rate
+                    if (i + 1) % 10 == 0:
+                        print(
+                            f" {(i+1) + linesPerPage * (page - 1)} / {linesPerPage * pages}"
+                        )
 
-                #### 고용 정보 ####
-                # company name
-                cpname = (
-                    lines[i]
-                    .find_element(
-                        By.CSS_SELECTOR, "li > div.cell_first > div.cl_top > a"
-                    )
-                    .text
-                )
-                # title
-                title = (
-                    lines[i]
-                    .find_element(By.CSS_SELECTOR, "li > div.cell_mid > div.cl_top > a")
-                    .text
-                )
-                # 경력
-                career = (
-                    lines[i]
-                    .find_element(
-                        By.CSS_SELECTOR,
-                        "li > div.cell_mid > div.cl_md > span:nth-child(1)",
-                    )
-                    .text
-                )
-                # 학력
-                education = (
-                    lines[i]
-                    .find_element(
-                        By.CSS_SELECTOR,
-                        "li > div.cell_mid > div.cl_md > span:nth-child(2)",
-                    )
-                    .text
-                )
-                # 고용형태
-                jobType = (
-                    lines[i]
-                    .find_element(
-                        By.CSS_SELECTOR,
-                        "li > div.cell_mid > div.cl_md > span:nth-child(4)",
-                    )
-                    .text
-                )
-
-                ############ 기업 정보 ############
-
-                # Store the ID of the original windows
-                original_window = driver.current_window_handle
-
-                # Check we don't have other windows open already
-                assert len(driver.window_handles) == 1
-
-                # Click the link of company info
-                cpInfoLink = wait.until(
-                    EC.element_to_be_clickable(
-                        lines[i].find_element(
+                    #### 고용 정보 ####
+                    # company name
+                    cpname = (
+                        lines[i]
+                        .find_element(
                             By.CSS_SELECTOR, "li > div.cell_first > div.cl_top > a"
                         )
+                        .text
                     )
-                )
+                    # title
+                    title = (
+                        lines[i]
+                        .find_element(
+                            By.CSS_SELECTOR, "li > div.cell_mid > div.cl_top > a"
+                        )
+                        .text
+                    )
+                    # 경력
+                    career = (
+                        lines[i]
+                        .find_element(
+                            By.CSS_SELECTOR,
+                            "li > div.cell_mid > div.cl_md > span:nth-child(1)",
+                        )
+                        .text
+                    )
+                    # 학력
+                    education = (
+                        lines[i]
+                        .find_element(
+                            By.CSS_SELECTOR,
+                            "li > div.cell_mid > div.cl_md > span:nth-child(2)",
+                        )
+                        .text
+                    )
+                    # 고용형태
+                    jobType = (
+                        lines[i]
+                        .find_element(
+                            By.CSS_SELECTOR,
+                            "li > div.cell_mid > div.cl_md > span:nth-child(4)",
+                        )
+                        .text
+                    )
 
-                cpInfoLink.click()
+                    ############ 기업 정보 ############
 
-                # Wait for the new tab
-                try:
+                    # Store the ID of the original windows
+                    original_window = driver.current_window_handle
+
+                    # Check we don't have other windows open already
+                    assert len(driver.window_handles) == 1
+
+                    # Click the link of company info
+                    cpInfoLink = wait.until(
+                        EC.element_to_be_clickable(
+                            lines[i].find_element(
+                                By.CSS_SELECTOR, "li > div.cell_first > div.cl_top > a"
+                            )
+                        )
+                    )
+
+                    cpInfoLink.click()
+
+                    # Wait for the new tab
                     wait.until(EC.number_of_windows_to_be(2))
-                except TimeoutException:
-                    # 중간결과라도 저장
-                    df.to_csv("raw_data_temp.csv", encoding="utf-8-sig")
 
-                # Find a new windows and switch to
-                for window_handle in driver.window_handles:
-                    if window_handle != original_window:
-                        driver.switch_to.window(window_handle)
-                        break
+                    # Find a new windows and switch to
+                    for window_handle in driver.window_handles:
+                        if window_handle != original_window:
+                            driver.switch_to.window(window_handle)
+                            break
 
-                # 기업명, 기업유형, 대표, 설립일, 매출, 사원수, 평균연봉, 자본금, 업종
-                # detail = driver.find_element(
-                #     By.CSS_SELECTOR,
-                #     ".head_company_detail > div",
-                # )
-                try:
+                    # 기업명, 기업유형, 대표, 설립일, 매출, 사원수, 평균연봉, 자본금, 업종
+                    # detail = driver.find_element(
+                    #     By.CSS_SELECTOR,
+                    #     ".head_company_detail > div",
+                    # )
                     detail = wait.until(
                         EC.presence_of_element_located(
                             (
@@ -230,116 +235,148 @@ with webdriver.Chrome(options=options) as driver:
                             )
                         )
                     )
-                except TimeoutException:
-                    # 중간결과라도 저장
-                    df.to_csv("raw_data_temp.csv", encoding="utf-8-sig")
 
-                # 0 기업명, 1 기업규모, 2 대표자, 3 설립일, 4 매출액, 5 사원수, 6 평균연봉, 7 자본금, 8 업종
-                # cptype = "-"
-                sales = "-"
-                # employees = "-"
-                aversalary = "-"
-                capital = "-"
+                    # 0 기업명, 1 기업규모, 2 대표자, 3 설립일, 4 매출액, 5 사원수, 6 평균연봉, 7 자본금, 8 업종
+                    # cptype = "-"
+                    sales = "-"
+                    # employees = "-"
+                    aversalary = "-"
+                    capital = "-"
 
-                rows = detail.find_elements(By.CSS_SELECTOR, "ul")
-                # aversalaryIsNull = True
-                for row in rows:
-                    elems = row.find_elements(By.CSS_SELECTOR, "li")
-                    for elem in elems:
-                        # 기업규모, 매출액, 사원수, 평균연봉, 자본금
-                        elem_text = elem.find_element(By.CSS_SELECTOR, "strong").text
+                    rows = detail.find_elements(By.CSS_SELECTOR, "ul")
+                    # aversalaryIsNull = True
+                    for row in rows:
+                        elems = row.find_elements(By.CSS_SELECTOR, "li")
+                        for elem in elems:
+                            # 기업규모, 매출액, 사원수, 평균연봉, 자본금
+                            elem_text = elem.find_element(
+                                By.CSS_SELECTOR, "strong"
+                            ).text
 
-                        if elem_text == "기업규모":
-                            cptype = elem.find_element(By.CSS_SELECTOR, "span").text
-                        elif elem_text == "매출액":
-                            # '-' 값으로 채워진 경우 존재
-                            sales = elem.find_element(By.CSS_SELECTOR, "span").text
-                        elif elem_text == "사원수":
-                            employees = elem.find_element(By.CSS_SELECTOR, "span").text
-                        elif elem_text == "평균연봉":
-                            # ** 아예 항목이 없는 경우 존재 **
-                            aversalary = elem.find_element(By.CSS_SELECTOR, "span").text
-                            # aversalaryIsNull = False
-                        elif elem_text == "자본금":
-                            # '-' 값으로 채워진 경우 존재
-                            capital = elem.find_element(By.CSS_SELECTOR, "span").text
+                            if elem_text == "기업규모":
+                                cptype = elem.find_element(By.CSS_SELECTOR, "span").text
+                            elif elem_text == "매출액":
+                                # '-' 값으로 채워진 경우 존재
+                                sales = elem.find_element(By.CSS_SELECTOR, "span").text
+                            elif elem_text == "사원수":
+                                employees = elem.find_element(
+                                    By.CSS_SELECTOR, "span"
+                                ).text
+                            elif elem_text == "평균연봉":
+                                # ** 아예 항목이 없는 경우 존재 **
+                                aversalary = elem.find_element(
+                                    By.CSS_SELECTOR, "span"
+                                ).text
+                                # aversalaryIsNull = False
+                            elif elem_text == "자본금":
+                                # '-' 값으로 채워진 경우 존재
+                                capital = elem.find_element(
+                                    By.CSS_SELECTOR, "span"
+                                ).text
 
-                # if aversalaryIsNull:
-                #     aversalary = "-"
-
-                # 입사추천태그('입사지원하면 좋은 이유')
-                pros = []
-                try:
-                    newty = driver.find_element(
-                        By.CSS_SELECTOR,
-                        "#company_warp > div:nth-child(4) > div > div.newty",
-                    )
-                # '입사 지원하면 좋은 이유' element XPATH가 조금씩 다른 문제를 예외처리를 통해 일일이 조정
-                except NoSuchElementException:
-                    # print("NoSuchElementException: #company_warp > div:nth-child(4) > div > div.newty")
+                    # 입사추천태그('입사지원하면 좋은 이유')
+                    pros = []
                     try:
                         newty = driver.find_element(
                             By.CSS_SELECTOR,
-                            "#company_warp > div:nth-child(3) > div > div.newty",
+                            "#company_warp > div:nth-child(4) > div > div.newty",
                         )
-                    # div.newty 이 아예 없는 경우 ('입사지원하면 좋은 이유' 항목 미등록)
+                    # '입사 지원하면 좋은 이유' element XPATH가 조금씩 다른 문제를 예외처리를 통해 일일이 조정
                     except NoSuchElementException:
-                        # print("NoSuchElementException: #company_warp.")
-                        pass
-                finally:
-                    try:
-                        pros2 = newty.find_elements(
-                            By.CSS_SELECTOR, "div > div > div > div > ul > li"
-                        )
-
-                        for pro in pros2:
-                            pros.append(
-                                driver.execute_script(
-                                    "return arguments[0].innerText",
-                                    pro.find_element(By.CSS_SELECTOR, "a > strong"),
-                                )
+                        # print("NoSuchElementException: #company_warp > div:nth-child(4) > div > div.newty")
+                        try:
+                            newty = driver.find_element(
+                                By.CSS_SELECTOR,
+                                "#company_warp > div:nth-child(3) > div > div.newty",
                             )
-                    except NoSuchElementException:
-                        # newty IS NULL. 즉, div.newty (입사지원하면 좋은 이유) 가 아에 없는 경우
-                        # List<string> pros : empty list 로 냅둠.
-                        pass
+                        # div.newty 이 아예 없는 경우 ('입사지원하면 좋은 이유' 항목 미등록)
+                        except NoSuchElementException:
+                            # print("NoSuchElementException: #company_warp.")
+                            pass
+                    finally:
+                        try:
+                            pros2 = newty.find_elements(
+                                By.CSS_SELECTOR, "div > div > div > div > ul > li"
+                            )
 
-                # features = ['region', 'cpname', 'title', 'career', 'education',
-                #             'jobtype', 'cptype', 'sales', 'employees' 'aversalary',
-                #             'capital', 'pros']
+                            for pro in pros2:
+                                pros.append(
+                                    driver.execute_script(
+                                        "return arguments[0].innerText",
+                                        pro.find_element(By.CSS_SELECTOR, "a > strong"),
+                                    )
+                                )
+                        except NoSuchElementException:
+                            # newty IS NULL. 즉, div.newty (입사지원하면 좋은 이유) 가 아에 없는 경우
+                            # List<string> pros : empty list 로 냅둠.
+                            pass
 
-                pros_str = "-".join([pro for pro in pros])
+                    # features = ['region', 'cpname', 'title', 'career', 'education',
+                    #             'jobtype', 'cptype', 'sales', 'employees' 'aversalary',
+                    #             'capital', 'pros']
 
-                # 데이터 취합
+                    pros_str = "-".join([pro for pro in pros])
 
-                values = [
-                    rgnName,
-                    cpname,
-                    title,
-                    career,
-                    education,
-                    jobType,
-                    cptype,
-                    sales,
-                    employees,
-                    aversalary,
-                    capital,
-                    pros_str,
-                ]
+                    # 데이터 취합
 
-                new_row = dict(zip(features, values))
+                    values = [
+                        rgnName,
+                        cpname,
+                        title,
+                        career,
+                        education,
+                        jobType,
+                        cptype,
+                        sales,
+                        employees,
+                        aversalary,
+                        capital,
+                        pros_str,
+                    ]
 
-                # print(new_row)
+                    new_row = dict(zip(features, values))
 
-                # 기존 dataframe 의 새 row 로 추가
-                df = pd.concat(
-                    [df, pd.DataFrame.from_dict([new_row])], ignore_index=True
-                )
+                    # print(new_row)
 
-                # close current tap
-                driver.close()
-                wait.until(EC.number_of_windows_to_be(1))
-                # switch back to original window(or tap)
-                driver.switch_to.window(original_window)
+                    # 기존 dataframe 의 새 row 로 추가
+                    df = pd.concat(
+                        [df, pd.DataFrame.from_dict([new_row])], ignore_index=True
+                    )
+
+                    # close current tap
+                    driver.close()
+                    wait.until(EC.number_of_windows_to_be(1))
+                    # switch back to original window(or tap)
+                    driver.switch_to.window(original_window)
+
+                except (TimeoutException, NoSuchElementException):
+                    print(
+                        "exception (TimeoutException or NoSuchElementException) occured"
+                    )
+                    # cool down
+                    driver.implicitly_wait(5)
+                    df.to_csv(
+                        f"raw_data_{rgnID_NAME[rgnID]}_temp.csv", encoding="utf-8-sig"
+                    )
+
+                    # 열린 탭들 정리
+                    if len(driver.window_handles) != 1:
+                        print(
+                            f"the number of all windows: ", len(driver.window_handles)
+                        )
+                        original_window = driver.window_handles[0]
+                        for window in driver.window_handles:
+                            if window != original_window:
+                                driver.switch_to.window(window)
+                                driver.close()
+                                driver.switch_to.window(original_window)
+                        print(
+                            f"After clearing dummy windows - the number of all windows: ",
+                            len(driver.window_handles),
+                        )
+                    print("progress resumed")
+                    continue
+
+        df.to_csv(f"raw_data_{rgnID_NAME[rgnID]}.csv", encoding="utf-8-sig")
 
     df.to_csv("raw_data.csv", encoding="utf-8-sig")
