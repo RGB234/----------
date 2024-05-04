@@ -239,7 +239,7 @@ with webdriver.Chrome(options=options) as driver:
                     # 0 기업명, 1 기업규모, 2 대표자, 3 설립일, 4 매출액, 5 사원수, 6 평균연봉, 7 자본금, 8 업종
                     # cptype = "-"
                     sales = "-"
-                    # employees = "-"
+                    employees = "-"
                     aversalary = "-"
                     capital = "-"
 
