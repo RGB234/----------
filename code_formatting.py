@@ -1,49 +1,35 @@
-# 17개 지역
-regions = {
-    "11": "서울",
-    "12": "부산",
-    "14": "인천",
-    "16": "대전",
-    "15": "광주",
-    "13": "대구",
-    "17": "울산",
-    "27": "세종",
-    "18": "경기",
-    "19": "강원특별자치도",
-    "20": "충북",
-    "21": "충남",
-    "22": "전북특별자치도",
-    "23": "전남",
-    "24": "경북",
-    "25": "경남",
-    "26": "제주",
-}
+X = df_balanced_drop.iloc[:, 1:]
+y = df_balanced_drop["region"]
 
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=747
+)
 
-# 수도권 : 서울, 인천, 세종, 경기
-# 수도권 외 광역시: 부산, 대구, 광주, 대전, 울산
-# 그 외 지방: 강원, 충북, 충남, 전북, 전남, 경북, 경남, 제주
+# randSearch.best_params_
+# Best Parameters :  {'n_estimators': 80, 'max_depth': 4, 'learning_rate': 0.14}
 
-features = [
-    "region",
-    "cpname",
-    "title",
-    "career",
-    "education",
-    "jobtype",
-    "cptype",
-    "sales",
-    "employees",
-    "aversalary",
-    "capital",
-    "pros",
-]
-df = pd.DataFrame(columns=features)
+xgb_clf_tuned = XGBClassifier(
+    n_estimators=80,
+    max_depth=4,
+    learning_rate=0.14,
+    objective="multi:softmax",
+    num_class=3,
+    eval_metric=["mlogloss"],
+)
 
-for region in regions.values():
-    df_subset = pd.read_csv(f"sample data/raw_data_{region}.csv", index_col=0)
-    df = pd.concat([df, df_subset])
+xgb_clf_tuned.fit(
+    X_train, y_train, eval_set=[(X_train, y_train), (X_test, y_test)], verbose=0
+)
+results = xgb_clf_tuned.evals_result()
+epochs = len(results["validation_0"]["mlogloss"])
+x_axis = range(0, epochs)
 
-df = df.reset_index(drop=True)
-
-df.to_csv("raw_data.csv", encoding="utf-8-sig")
+# xgb_clf 'mlogloss' plot
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.plot(x_axis, results["validation_0"]["mlogloss"], label="Train")
+ax.plot(x_axis, results["validation_1"]["mlogloss"], label="Test")
+ax.legend()
+plt.xlabel("epoch")
+plt.ylabel("mlogloss")
+plt.title("RandomSearchCV XGB Clf")
+plt.show()
